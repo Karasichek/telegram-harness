@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+rag_index.json
+kb/
+*.log
+nohup.out
+tmp/
+/data/
+tmp_*
+*.swp
