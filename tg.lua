@@ -13,13 +13,22 @@ end
 
 local function api(token, method, params, timeout)
   local cmd = {'curl', '-sS', '--max-time', tostring(timeout or 30), 'https://api.telegram.org/bot' .. token .. '/' .. method}
+  local tmps = {}
   for k, v in pairs(params or {}) do
     if v ~= nil then
-      cmd[#cmd+1] = (type(v)=='string' and v:sub(1,1)=='@') and '-F' or '-F'
-      cmd[#cmd+1] = k .. '=' .. tostring(v)
+      v = tostring(v)
+      if v:sub(1,1) == '@' then
+        cmd[#cmd+1] = '-F'; cmd[#cmd+1] = k .. '=' .. v
+      elseif v:find('[\n\r]') or #v > 700 or k=='caption' or k=='text' then
+        local tf = '/data/data/com.termux/files/usr/tmp/tgf_' .. k .. '_' .. tostring(os.time()) .. math.random(9999) .. '.dat'
+        local f = io.open(tf,'wb'); if f then f:write(v); f:close(); tmps[#tmps+1]=tf; cmd[#cmd+1]='-F'; cmd[#cmd+1]=k..'=<'..tf else cmd[#cmd+1]='-F'; cmd[#cmd+1]=k..'='..v end
+      else
+        cmd[#cmd+1] = '--form-string'; cmd[#cmd+1] = k .. '=' .. v
+      end
     end
   end
   local body = sh(cmd)
+  for _, tf in ipairs(tmps) do os.remove(tf) end
   local obj, _, err = json.decode(body)
   if not obj then return nil, err or body end
   return obj
