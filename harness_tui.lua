@@ -139,7 +139,8 @@ print(text)
 if post then
   local bot=tg.new(%q); local res=bot:post_photo(CFG.out_chat,'@'..outimg,text,{parse_mode='HTML'})
   print(json.encode(res))
-  if res and res.ok and doc~='' then print(json.encode(bot:post_doc(CFG.out_chat,'@'..doc,nil,{reply_parameters=json.encode({message_id=res.result.message_id})}))) end
+  local footer='\n\n<a href="https://t.me/boost/KarasichekMC">⚡Буст</a> | <a href="https://t.me/karasichek_family">😺 Наш чат</a>\n\nПᴏдбᴏᴩᴋᴀ ᴀддᴏнᴏʙ:\n<a href="https://t.me/KarasichekMC/2338">🔥 Actions&amp;Stuff</a> | <a href="https://t.me/KarasichekMC/2260">😇 Aether</a>\n<a href="https://t.me/KarasichekMC/2290">🎨 Intresting GUI</a> | <a href="https://t.me/KarasichekMC/2314">🧔 Villager News</a>\n🪁 <a href="https://t.me/KarasichekMC/2335">Create Aeronautics</a> | 🔧 <a href="https://t.me/KarasichekMC/2327">Create</a>\n\n<b>@karasichekMC</b> — ᴏ Bᴇdrᴏᴄᴋ'
+  if res and res.ok and doc~='' then print(json.encode(bot:post_doc(CFG.out_chat,'@'..doc,footer,{parse_mode='HTML',reply_parameters=json.encode({message_id=res.result.message_id})}))) end
 end
 os.remove(outimg)
 ]=], args.overlay, args.chat, args.mc_ver, args.model, args.groq_key,

@@ -157,12 +157,13 @@ local function process(chat_id, st)
   end
   local text, e2 = format_post(st.caption or '', addon_name, page_text)
   if not text then os.remove(in_img); os.remove(out_img); os.remove(doc_path); return nil, tostring(e2) end
+  local footer = '\n\n<a href="https://t.me/boost/KarasichekMC">⚡Буст</a> | <a href="https://t.me/karasichek_family">😺 Наш чат</a>\n\nПᴏдбᴏᴩᴋᴀ ᴀддᴏнᴏʙ:\n<a href="https://t.me/KarasichekMC/2338">🔥 Actions&amp;Stuff</a> | <a href="https://t.me/KarasichekMC/2260">😇 Aether</a>\n<a href="https://t.me/KarasichekMC/2290">🎨 Intresting GUI</a> | <a href="https://t.me/KarasichekMC/2314">🧔 Villager News</a>\n🪁 <a href="https://t.me/KarasichekMC/2335">Create Aeronautics</a> | 🔧 <a href="https://t.me/KarasichekMC/2327">Create</a>\n\n<b>@karasichekMC</b> — ᴏ Bᴇdrᴏᴄᴋ'
   local res = bot:post_photo(CFG.out_chat, '@'..out_img, text, {parse_mode='HTML'})
   local doc_res
   if res and res.ok and has_doc then
-    doc_res = bot:post_doc(CFG.out_chat, '@'..doc_path, nil, {reply_parameters = json.encode({message_id = res.result.message_id})})
+    doc_res = bot:post_doc(CFG.out_chat, '@'..doc_path, footer, {parse_mode='HTML', reply_parameters = json.encode({message_id = res.result.message_id})})
   elseif res and res.ok and st.doc_id and not has_doc then
-    doc_res = bot:call('sendDocument', {chat_id=CFG.out_chat, document=st.doc_id, reply_parameters=json.encode({message_id=res.result.message_id})}, 120)
+    doc_res = bot:call('sendDocument', {chat_id=CFG.out_chat, document=st.doc_id, caption=footer, parse_mode='HTML', reply_parameters=json.encode({message_id=res.result.message_id})}, 120)
   end
   os.remove(in_img); if out_img~=in_img then os.remove(out_img) end; os.remove(doc_path)
   if res and res.ok then res.doc = doc_res end
