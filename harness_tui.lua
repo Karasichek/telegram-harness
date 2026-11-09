@@ -1,10 +1,12 @@
 #!/usr/bin/env lua5.4
+local function script_dir() local s=debug.getinfo(1,'S').source:match('^@?(.*)'); return s and s:match('(.*/)') or './' end
+local DIR = script_dir()
 package.path = table.concat({
+  DIR..'?.lua', DIR..'?/init.lua',
   package.path,
   '/data/data/com.termux/files/usr/share/lua/5.4/?.lua',
   '/data/data/com.termux/files/usr/share/lua/5.4/?/init.lua',
   '/data/data/com.termux/files/usr/share/lua/5.4/luarocks/vendor/?.lua',
-  '/data/data/com.termux/files/home/?.lua',
 }, ';')
 
 local argparse = require('argparse')

@@ -1,6 +1,7 @@
 #!/usr/bin/env lua5.4
--- tiny local RAG (BM25-ish over text files) — no embeddings, no python
-package.path = package.path .. ';/data/data/com.termux/files/usr/share/lua/5.4/luarocks/vendor/?.lua;/data/data/com.termux/files/home/?.lua'
+-- tiny local RAG (BM25-ish over text files)
+local function script_dir() local s=debug.getinfo(1,'S').source:match('^@?(.*)'); return s and s:match('(.*/)') or './' end
+package.path = script_dir()..'?.lua;' .. package.path .. ';/data/data/com.termux/files/usr/share/lua/5.4/luarocks/vendor/?.lua'
 local json = require('dkjson')
 
 local M = { store = os.getenv('RAG_STORE') or (os.getenv('HOME') .. '/rag_index.json'), docs = {} }

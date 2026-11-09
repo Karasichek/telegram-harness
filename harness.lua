@@ -1,5 +1,7 @@
 #!/usr/bin/env lua5.4
-package.path = package.path .. ';/data/data/com.termux/files/usr/share/lua/5.4/luarocks/vendor/?.lua;/data/data/com.termux/files/home/?.lua'
+local function script_dir() local s=debug.getinfo(1,'S').source:match('^@?(.*)'); return s and s:match('(.*/)') or './' end
+local DIR = script_dir()
+package.path = table.concat({DIR..'?.lua', DIR..'?/init.lua', package.path, '/data/data/com.termux/files/usr/share/lua/5.4/luarocks/vendor/?.lua'}, ';')
 local json = require('dkjson')
 local tg = require('tg')
 local okrag, rag = pcall(require, 'rag')
