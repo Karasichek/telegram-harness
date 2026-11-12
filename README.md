@@ -1,33 +1,60 @@
 # tg-harness
 
-Lua 5.4 Telegram post harness: photo+caption(+page URL)+addon file from bot DM → overlay → parse page → Groq formats post → posts photo + document (with footer) to channel. Includes tiny local BM25 RAG.
+Lua 5.4 tool for Telegram: it turns a DM with a photo, caption, and addon file into a ready channel post.
+
+Flow: receive photo+caption (+page URL) + document in bot DM → overlay image (`magick`) → parse page → Groq extracts addon name and formats post → post photo + document (with footer) to channel. Includes a small local BM25 RAG (no embeddings).
+
+## Features
+- Telegram Bot API long-polling bot (`harness.lua`) and CLI/TUI (`harness_tui.lua`, `argparse`)
+- One-shot generation from local files (`once`) or text-only formatting (`format`)
+- Page parsing in Lua (no Python) with SSRF guard (http/https, public hosts only)
+- Local RAG over `.txt/.md/.lua` (`rag.lua`), used as context for Groq
+- Single config table in `config.lua`; secrets only from env
+- Debug mode, auth allowlist, request/size limits
 
 ## Requirements
-- `lua5.4`, `dkjson`, `argparse` (LuaRocks/vendor)
-- `curl`, ImageMagick `magick`
-- env: `TG_TOKEN`, `GROQ_API_KEY` (keep in `.env`)
+- `lua5.4`
+- Lua: `dkjson`, `argparse` (LuaRocks/vendor paths supported)
+- CLI: `curl`, ImageMagick `magick`
+- Env: `TG_TOKEN`, `GROQ_API_KEY`
 
-## Setup
+## Install
 ```sh
-./install.sh            # installs tg-harness, tg-harnessd into $PREFIX/bin
-cp .env.example .env    # set TG_TOKEN, GROQ_API_KEY, ALLOWED_USERS (recommended)
-set -a; . ./.env; set +a
+cd ~/projects/tg-harness-tools   # or package dir
+./install.sh                     # installs tg-harness, tg-harnessd to $PREFIX/bin
+cp .env.example .env             # set TG_TOKEN, GROQ_API_KEY (and ALLOWED_USERS)
+```
+Load env for a session: `set -a; . ./.env; set +a` (`tg-harness`/`tg-harnessd` auto-load `.env` from the package dir).
+
+## Quick start
+```sh
 tg-harness --help
+tg-harness format "Create Coasters.mcaddon" "американские горки в стиле Create"
+tg-harness once -i img.png -d addon.mcaddon -c "описание" [-u https://...] [--post]
+tg-harness index ~/kb
+tg-harness ask "что добавить в описание аддона с горками?"
+tg-harness run --fg              # polling bot (foreground; use interactive shell/tmux)
 ```
 
-## Config
-All behavior lives in `config.lua` (key=value table): model/temps/prompts/footer/paths/limits and `ALLOWED_USERS` (comma-separated Telegram user ids, empty = allow all). Secrets only from env.
+## Bot DM usage
+1. Send **photo with caption** (description; may include a URL) and the **addon document** (any order).
+2. Bot reports missing parts; when photo+caption(+doc/name) ready it processes and posts to `out_chat`, or send `/post` to force (photo+caption required).
 
-## Usage
-```sh
-tg-harness run --fg                 # polling bot
-tg-harness once -i img.png -d x.mcaddon -c "text" [-u URL] [--post]
-tg-harness format "file.mcaddon" "desc"
-tg-harness index ./kb               # (re)build RAG index
-tg-harness ask "question"
-tg-harness status | stop
-```
-DM: photo+caption(+URL)+document, `/post` if needed. `/kb` saves buffered text to KB and reindexes. `/clear` resets.
+Commands: `/start`, `/post`, `/clear`, `/kb` or `/savekb` (save buffered text / replied message to KB and reindex), `/debug` (toggle), `/status`.
+
+## Repository layout
+- `config.lua` — all configuration (key=value), reads env
+- `tg.lua` — Telegram Bot API client (curl config files, no secrets in argv)
+- `harness.lua` — polling bot / posting pipeline
+- `harness_tui.lua` — CLI (argparse/glowberry-style headers)
+- `rag.lua` — local BM25 index/search
+- `tg-harness`, `tg-harnessd`, `install.sh` — launchers/installer
+- `test.lua` — basic checks
+- `docs/DOCUMENTATION.md` — detailed reference
 
 ## Security
-Never commit `.env`/keys. Set `ALLOWED_USERS`. Bot token/Groq key stay out of argv (curl config files) and temp files are mode 600/cleaned. Rotate exposed keys.
+- Keep secrets in `.env` (gitignored). Rotate any exposed `TG_TOKEN`/`GROQ_API_KEY`.
+- Set `ALLOWED_USERS` (comma-separated Telegram user IDs); empty means anyone can DM the bot.
+- Page fetch blocks localhost/private/link-local hosts. Temp/curl-config files are restricted and cleaned.
+
+See [docs/DOCUMENTATION.md](docs/DOCUMENTATION.md) for full config, pipeline, RAG, and debugging details.
