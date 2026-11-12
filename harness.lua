@@ -10,9 +10,10 @@ local okrag, rag = pcall(require, 'rag')
 local function tmp(base, ext) return C.tmp..'/'..base..'_'..tostring(os.time())..'_'..tostring(math.random(0,0x7fffffff))..(ext or '') end
 local function q(v) return "'" .. tostring(v):gsub("'", "'\\''") .. "'" end
 local function run(argv)
-  local line = {"'exec'"}; for _, a in ipairs(argv) do line[#line+1] = "'"..tostring(a):gsub("'","'\\''").."'" end
+  local line = {}; for _, a in ipairs(argv) do line[#line+1] = "'"..tostring(a):gsub("'","'\\''").."'" end
   local h = io.popen("sh -c 'exec \"$@\"' sh " .. table.concat(line,' '))
-  local out = h and h:read('*a') or ''; local ok,_,code = h and h:close() or false,nil,nil; return out, ok, code
+  local out = h and h:read('*a') or ''; local ok = h and h:close() or false
+  return out, ok
 end
 local function file_exists(p) local f=io.open(p,'rb'); if f then f:close(); return true end end
 local function rm(p) if p then os.remove(p) end end
@@ -152,7 +153,7 @@ end
 if not C.groq_key then io.stderr:write('set GROQ_API_KEY\n'); os.exit(1) end
 if not C.tg_token then io.stderr:write('set TG_TOKEN\n'); os.exit(1) end
 if not next(C.allowed_users) then io.stderr:write('warn: ALLOWED_USERS not set, bot accepts messages from anyone\n') end
-print('harness polling… out='..tostring(C.out_chat))
+print('harness polling… out='..tostring(C.out_chat)..(C.debug and ' [debug]' or ''))
 
 while true do
   local upd = bot:get_updates(offset, 30)
@@ -164,13 +165,19 @@ while true do
       if msg and msg.chat then
         local cid = msg.chat.id
         local from = msg.from and tostring(msg.from.id) or tostring(cid)
+        C.dbg('update', u.update_id, 'from', from, 'chat', cid)
         if not C.is_allowed(from) then
-          -- ignore unauthorized
+          C.dbg('denied', from)
         else
           touch(cid)
           local txt = msg.text or ''
           if txt:match('^/clear') then pending[cid]=nil; pending_kb[cid]=nil; bot:call('sendMessage',{chat_id=cid,text='ok, очищено'})
-          elseif txt:match('^/start') then bot:call('sendMessage',{chat_id=cid,text='Пост: пришли фото (с подписью) и файл аддона — запощу в канал.\nБаза знаний: пришли текст, затем /kb чтобы сохранить в RAG.'})
+          elseif txt:match('^/start') then bot:call('sendMessage',{chat_id=cid,text='Пост: пришли фото (с подписью) и файл аддона — запощу в канал.\nБаза знаний: пришли текст, затем /kb чтобы сохранить в RAG.\nДебаг: /debug /status'})
+          elseif txt:match('^/debug') then C.debug = not C.debug; bot:call('sendMessage',{chat_id=cid,text='debug='..tostring(C.debug)})
+          elseif txt:match('^/status') then
+            local st = pending[cid] or {}; local n=0; for _ in pairs(pending) do n=n+1 end
+            local info = string.format('debug=%s out=%s model=%s allowed=%s pending=%d kb_buf=%d', tostring(C.debug), tostring(C.out_chat), tostring(C.model), (next(C.allowed_users) and 'on' or 'ANY'), n, #(pending_kb[cid] or ''))
+            bot:call('sendMessage',{chat_id=cid,text=info})
           elseif txt:match('^/kb%s*$') or txt:match('^/savekb%s*$') then
             local body = (pending_kb[cid] and pending_kb[cid]~='') and pending_kb[cid] or (msg.reply_to_message and (msg.reply_to_message.text or msg.reply_to_message.caption) or '')
             if body=='' then bot:call('sendMessage',{chat_id=cid,text='нет текста. Пришли сообщение, потом /kb (или ответь /kb на сообщение).'})
@@ -194,6 +201,7 @@ while true do
               bot:call('sendMessage',{chat_id=cid,text='текст сохранён в буфер'..hint..'.'})
             end
             local ready = st.photo_id and st.caption and (st.doc_id or st.doc_name)
+            C.dbg('state', 'photo='..tostring(st.photo_id~=nil), 'caption='..tostring(st.caption~=nil), 'doc='..tostring((st.doc_id or st.doc_name)~=nil), 'ready='..tostring(ready))
             if ready or txt:match('^/post') then
               if not (st.photo_id and st.caption) then bot:call('sendMessage',{chat_id=cid,text='нужно: фото + подпись (и документ с именем аддона).'})
               else
@@ -216,7 +224,7 @@ while true do
       end
     end
   elseif upd and not upd.ok then
-    -- transient error, brief pause
+    C.dbg('getUpdates error', json.encode(upd))
     os.execute('sleep 2')
   end
 end

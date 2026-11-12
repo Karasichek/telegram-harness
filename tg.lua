@@ -18,11 +18,14 @@ end
 
 local function run_curl(args)
   local cmd = {'curl','-sS'}; for _, a in ipairs(args) do cmd[#cmd+1] = a end
-  -- build argv via sh -c 'exec "$@"' -- ... to avoid shell parsing issues
-  local line = {"'exec'"}; for _, a in ipairs(cmd) do line[#line+1] = "'" .. tostring(a):gsub("'","'\\''") .. "'" end
+  local line = {}; for _, a in ipairs(cmd) do line[#line+1] = "'" .. tostring(a):gsub("'","'\\''") .. "'" end
   local h = io.popen("sh -c 'exec \"$@\"' sh " .. table.concat(line, ' '))
-  local out = h and h:read('*a') or ''; local ok, _, code = h and h:close() or false, nil, nil
-  return out, ok, code
+  local out = h and h:read('*a') or ''; local ok = h and h:close() or false
+  return out, ok
+end
+
+local function dbg(msg)
+  if os.getenv('DEBUG') or os.getenv('HARNESS_DEBUG') then io.stderr:write('[debug][tg] '..tostring(msg)..'\n') end
 end
 
 local function api(token, method, params, timeout)
@@ -44,10 +47,12 @@ local function api(token, method, params, timeout)
     end
   end
   cf:close(); os.execute('chmod 600 ' .. cfg)
+  dbg(method..' ...')
   local body = select(1, run_curl({'--max-time', tostring(timeout or 30), '-K', cfg}))
   for _, tf in ipairs(tmps) do os.remove(tf) end
   local obj, _, err = json.decode(body)
-  if not obj then return nil, err or body end
+  if not obj then dbg(method..' bad json/empty'); return nil, err or body end
+  if not obj.ok then dbg(method..' error: '..tostring(obj.description or obj.error_code)) end
   return obj
 end
 

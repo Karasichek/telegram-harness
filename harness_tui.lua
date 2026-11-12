@@ -10,7 +10,7 @@ local C = require('config')
 
 local function q(v) return "'" .. tostring(v):gsub("'", "'\\''") .. "'" end
 local function sh(argv)
-  local line = {"'exec'"}; for _, a in ipairs(argv) do line[#line+1] = "'"..tostring(a):gsub("'","'\\''").."'" end
+  local line = {}; for _, a in ipairs(argv) do line[#line+1] = "'"..tostring(a):gsub("'","'\\''").."'" end
   local h = io.popen("sh -c 'exec \"$@\"' sh " .. table.concat(line,' ')); local o=h and h:read('*a') or ''; local ok=h and h:close() or false; return o, ok
 end
 local function glow(sep, text)
@@ -21,7 +21,7 @@ local function glow(sep, text)
 end
 local function env_prefix(a)
   local p={}; local function e(k,v) if v and v~='' then p[#p+1]=k..'='..q(v) end end
-  e('GROQ_API_KEY',a.groq_key); e('TG_TOKEN',a.tg_token); e('TG_CHAT',a.chat); e('GROQ_MODEL',a.model); e('OVERLAY',a.overlay); e('MC_VERSION',a.mc_ver)
+  e('GROQ_API_KEY',a.groq_key); e('TG_TOKEN',a.tg_token); e('TG_CHAT',a.chat); e('GROQ_MODEL',a.model); e('OVERLAY',a.overlay); e('MC_VERSION',a.mc_ver); if C.debug then e('DEBUG','1') end
   return table.concat(p,' ')
 end
 
@@ -34,6 +34,7 @@ parser:option('--model','Groq model'):default(C.model)
 parser:option('--overlay','Overlay image path'):default(C.overlay)
 parser:option('--mc-ver','Default MC version'):default(C.mc_ver)
 parser:option('--log','Log file'):default(C.log)
+parser:flag('--debug','Включить debug (или DEBUG=1)')
 
 local subs = parser:command_target('cmd')
 local idx = subs:command('index i','Индексировать папку для RAG'); idx:argument('dir','Папка'):args('?')

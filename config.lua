@@ -16,6 +16,7 @@ local C = {
   out_chat = os.getenv('TG_CHAT') or '-1003627991849',
   model    = os.getenv('GROQ_MODEL') or 'openai/gpt-oss-120b',
   temperature = 0.3,
+  debug = not not ((os.getenv('DEBUG') or os.getenv('HARNESS_DEBUG') or ''):match('^[1tyTY]')),
 
   home = HOME, dir = DIR,
   overlay = os.getenv('OVERLAY') or (HOME .. '/downloads/overlay.png'),
@@ -42,5 +43,11 @@ C.prompt_format = C.prompt_format:format(C.mc_ver)
 function C.is_allowed(user_id)
   if not next(C.allowed_users) then return true end
   return C.allowed_users[tostring(user_id)] or false
+end
+function C.dbg(...)
+  if not C.debug then return end
+  local p = {}
+  for i=1,select('#',...) do local v=select(i,...); p[#p+1]=type(v)=='table' and '[table]' or tostring(v) end
+  io.stderr:write('[debug] '..table.concat(p,' ')..'\n')
 end
 return C
