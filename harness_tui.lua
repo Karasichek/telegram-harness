@@ -45,6 +45,7 @@ once:option('-i --image','Изображение'):count(1); once:option('-d --d
 once:option('-c --caption','Текст/описание'):default(''); once:option('-u --url','URL страницы'):default(''); once:flag('--post','Отправить в канал')
 local fmt = subs:command('format f','Groq: имя + формат поста'); fmt:argument('filename','Имя файла'); fmt:argument('caption','Описание'):args('*')
 local st = subs:command('status s','Статус/лог'); local sp = subs:command('stop x','Остановить')
+local his = subs:command('history h','История выложенных постов')
 
 local args = parser:parse()
 
@@ -90,7 +91,11 @@ elseif args.cmd == 'once' then
   end
   local fname = (args.doc~='' and args.doc:match('([^/]+)$')) or args.name
   local outimg = C.tmp..'/once_'..tostring(os.time())..'.jpg'
-  sh({'magick', args.image, '-gravity','SouthEast', args.overlay, '-geometry','+12+12', '-composite', outimg})
+  local function sz(p) local o=sh({'magick','identify','-format','%w %h',p}); local w,h=tostring(o):match('(%d+) (%d+)'); return tonumber(w),tonumber(h) end
+  local bw=sz(args.image); local ow,oh=sz(args.overlay)
+  local tw=math.max(1,math.floor((bw or 0)*0.4)); local th=math.max(1,math.floor((oh or 0)*tw/(ow or 1)))
+  local yoff=12-math.floor(th*0.25)
+  sh({'magick', args.image, '(', args.overlay, '-resize', tostring(tw)..'x', ')', '-gravity','SouthEast', '-geometry','+12'..(yoff>=0 and ('+'..yoff) or tostring(yoff)), '-composite', outimg})
   local an = select(1, groq_call(args.groq_key, args.model, C.prompt_extract_name, 'Имя файла: '..fname)) or fname
   an = an:gsub('[\r\n"]+',''):gsub('^%s+',''):gsub('%s+$',''); if an=='' then an=fname end
   local page_text
@@ -99,9 +104,9 @@ elseif args.cmd == 'once' then
   if okrag and rag then rag.store=C.rag_store; rag.load(); local ctx=rag.context(an..' '..(args.caption or ''),C.rag_k,C.rag_max); if ctx then user=user..'\n\nКонтекст из базы знаний (RAG):\n'..ctx end end
   local out, err = groq_call(args.groq_key, args.model, C.prompt_format:format(args.mc_ver), user)
   local obj = (out and json.decode(out:match('%b{}') or out)) or {}
-  local ver=tostring(obj.version or ''); if ver=='' or ver:match('^1%.0') then ver=args.mc_ver end
+  local ver=tostring(obj.version or ''):gsub('^%s+',''):gsub('%s+$',''):gsub('^1%.',''); if ver=='' or ver:match('^0') then ver=args.mc_ver end
   local desc=tostring(obj.description or args.caption or ''):gsub('[\r\n]+',' '):gsub('%s+',' ')
-  local text=string.format('『 <b>%s</b> • #<b>%s</b> 』<blockquote expandable>%s%s</blockquote><b>— Вᴇᴩᴄия: </b><code>%s</code>+​', esc(obj.name or an), esc(obj.type or 'аддон'), esc(desc), C.author, esc(ver))
+  local text=string.format('『 <b>%s</b> • #<b>%s</b> 』\n <blockquote expandable>%s%s</blockquote>\u{00A0}\n<b>— Вᴇᴩᴄия: </b><code>%s</code>+​', esc(obj.name or an), esc(obj.type or 'аддон'), esc(desc), C.author, esc(ver))
   print(text)
   if not out then io.stderr:write('groq error: '..tostring(err)..'\n') end
   if args.post then
@@ -126,12 +131,22 @@ elseif args.cmd == 'format' then
   an=an:gsub('[\r\n"]+',''):gsub('^%s+',''):gsub('%s+$',''); if an=='' then an=args.filename end
   local out,err=groq_call(args.groq_key,args.model,C.prompt_format:format(args.mc_ver),'Имя: '..an..'\nТекст:\n'..caption)
   local obj=(out and json.decode(out:match('%b{}') or out)) or {}
-  local ver=tostring(obj.version or ''); if ver=='' or ver:match('^1%.0') then ver=args.mc_ver end
+  local ver=tostring(obj.version or ''):gsub('^%s+',''):gsub('%s+$',''):gsub('^1%.',''); if ver=='' or ver:match('^0') then ver=args.mc_ver end
   local desc=tostring(obj.description or ''):gsub('[\r\n]+',' '):gsub('%s+',' ')
   io.write('\n-- addon name: '..an..'\n')
-  print(string.format('『 <b>%s</b> • #<b>%s</b> 』<blockquote expandable>%s%s</blockquote><b>— Вᴇᴩᴄия: </b><code>%s</code>+​', esc(obj.name or an), esc(obj.type or 'аддон'), esc(desc), C.author, esc(ver)))
+  print(string.format('『 <b>%s</b> • #<b>%s</b> 』\n <blockquote expandable>%s%s</blockquote>\u{00A0}\n<b>— Вᴇᴩᴄия: </b><code>%s</code>+​', esc(obj.name or an), esc(obj.type or 'аддон'), esc(desc), C.author, esc(ver)))
   if not out then io.stderr:write('groq error: '..tostring(err)..'\n') end
 elseif args.cmd == 'status' then
   glow('-', 'STATUS'); os.execute('pgrep -a lua 2>/dev/null | grep harness || echo "(no harness process)"'); os.execute('echo ---; tail -n 8 '..q(args.log)..' 2>/dev/null || true')
-elseif args.cmd == 'stop' then os.execute("pkill -f 'lua5%.4.*/harness%.lua' 2>/dev/null; echo stopped")
+elseif args.cmd == 'history' then
+  glow('=', 'POSTS HISTORY')
+  local posts = require('posts')
+  local n = 0
+  for _, e in ipairs(posts.list()) do
+    n = n+1
+    local t = (e.text or ''):gsub('\n', ' '):gsub('%s+', ' ')
+    print(string.format('%s msg=%s chat=%s :: %s', e.at and os.date('%Y-%m-%d %H:%M', e.at) or '?', tostring(e.msg_id), tostring(e.chat), t:sub(1,100)))
+  end
+  print('entries='..n..' file='..C.posts_file)
+elseif args.cmd == 'stop' then os.execute("pkill -f 'lua5\\.4.*/harness\\.lua' 2>/dev/null; echo stopped")
 else parser:print_help() end

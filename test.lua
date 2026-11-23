@@ -19,3 +19,16 @@ os.remove(d..'/a.txt'); rag.index_dir(d); assert_eq(#rag.docs,1,'update')
 local function esc_html(s) return tostring(s or ''):gsub('&','&amp;'):gsub('<','&lt;'):gsub('>','&gt;') end
 assert_eq(esc_html('a&<>"'), 'a&amp;&lt;&gt;"', 'esc')
 print('ok')
+
+-- posts cache: dedupe by key + newest kept
+os.remove('/data/data/com.termux/files/usr/tmp/posts_test.json')
+package.loaded.config=nil; local Cp=require('config'); Cp.posts_file='/data/data/com.termux/files/usr/tmp/posts_test.json'
+package.loaded.posts=nil; local posts=require('posts')
+assert_eq(posts.get('k'), nil, 'noget')
+posts.add({key='k', text='hello', at=1})
+assert_eq(posts.get('k').text, 'hello', 'put')
+posts.add({key='k', text='hello2', at=2})
+assert_eq(#posts.list(), 1, 'dedupe')
+assert_eq(posts.list()[1].text, 'hello2', 'newest')
+os.remove('/data/data/com.termux/files/usr/tmp/posts_test.json')
+print('ok')

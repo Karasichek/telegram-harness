@@ -1,6 +1,7 @@
 #!/usr/bin/env lua5.4
 package.path = package.path .. ';/data/data/com.termux/files/usr/share/lua/5.4/luarocks/vendor/?.lua'
 local json = require('dkjson')
+local BASE = (os.getenv('TG_API_BASE') or 'https://api.telegram.org'):gsub('/+$', '')
 local M = {}
 
 local function tmpname(prefix)
@@ -32,7 +33,7 @@ local function api(token, method, params, timeout)
   if not token or token == '' then return nil, 'missing token' end
   local cfg = tmpname('curlcfg')
   local cf = io.open(cfg,'wb'); if not cf then return nil, 'tmp failed' end
-  cf:write('url = "https://api.telegram.org/bot' .. token .. '/' .. method .. '"\n')
+  cf:write('url = "' .. BASE .. '/bot' .. token .. '/' .. method .. '"\n')
   local tmps = {cfg}
   for k, v in pairs(params or {}) do
     if v ~= nil then
@@ -51,8 +52,8 @@ local function api(token, method, params, timeout)
   local body = select(1, run_curl({'--max-time', tostring(timeout or 30), '-K', cfg}))
   for _, tf in ipairs(tmps) do os.remove(tf) end
   local obj, _, err = json.decode(body)
-  if not obj then dbg(method..' bad json/empty'); return nil, err or body end
-  if not obj.ok then dbg(method..' error: '..tostring(obj.description or obj.error_code)) end
+  if not obj then dbg(method..' bad json/empty'); io.stderr:write('[tg] '..method..' bad response: '..tostring((body ~= '' and body:sub(1,200)) or err)..'\n'); return nil, (body ~= '' and body:sub(1,300)) or err or 'empty response' end
+  if not obj.ok then dbg(method..' error: '..tostring(obj.description or obj.error_code)); io.stderr:write('[tg] '..method..' error: '..tostring(obj.description or obj.error_code)..'\n') end
   return obj
 end
 
@@ -69,6 +70,25 @@ function M:post_doc(chat_id, document, caption, params)
   if caption and caption~='' then params.caption=caption end
   return self:call('sendDocument', params, 120)
 end
+function M:post_video(chat_id, video, caption, params)
+  params=params or {}; params.chat_id=chat_id; params.video=video
+  if caption and caption~='' then params.caption=caption end
+  return self:call('sendVideo', params, 300)
+end
+function M:post_album(chat_id, items, caption, params)
+  params=params or {}; params.chat_id=chat_id
+  local pm=params.parse_mode; params.parse_mode=nil
+  local media={}
+  for i, it in ipairs(items) do
+    local m={type=it.type or 'photo'}
+    if it.path then m.media='attach://ph'..i; params['ph'..i]='@'..it.path else m.media=it.id end
+    if it.w then m.width=it.w; m.height=it.h; m.duration=it.dur end
+    if i==1 and caption and caption~='' then m.caption=caption; m.parse_mode=pm end
+    media[i]=m
+  end
+  params.media=json.encode(media)
+  return self:call('sendMediaGroup', params, 300)
+end
 function M:get_updates(offset, timeout)
   return self:call('getUpdates', {offset=offset, timeout=timeout or 30, allowed_updates=json.encode({'message'})}, (timeout or 30)+10)
 end
@@ -76,7 +96,7 @@ function M:download(file_id, dest)
   local r = self:call('getFile', {file_id=file_id})
   if not (r and r.ok and r.result and r.result.file_path) then return nil, r end
   local cfg = tmpname('dlcfg'); local f = io.open(cfg,'wb'); if not f then return nil end
-  f:write('url = "https://api.telegram.org/file/bot'..self.token..'/'..r.result.file_path..'"\noutput = "'..dest:gsub('\\','\\\\'):gsub('"','\\"')..'"\n'); f:close(); os.execute('chmod 600 '..cfg)
+  f:write('url = "'..BASE..'/file/bot'..self.token..'/'..r.result.file_path..'"\noutput = "'..dest:gsub('\\','\\\\'):gsub('"','\\"')..'"\n'); f:close(); os.execute('chmod 600 '..cfg)
   local _, ok = run_curl({'-L','--max-time','120','-K',cfg}); os.remove(cfg)
   if not ok then os.remove(dest); return nil, 'download failed' end
   local fh = io.open(dest,'rb'); if not fh then return nil, 'no file' end; fh:close(); return dest

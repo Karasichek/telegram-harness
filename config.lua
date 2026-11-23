@@ -11,10 +11,12 @@ end
 local C = {
   tg_token = os.getenv('TG_TOKEN'),
   groq_key = os.getenv('GROQ_API_KEY'),
+  openrouter_key = os.getenv('OPENROUTER_API_KEY'),
   allowed_users = csv_set(os.getenv('ALLOWED_USERS')), -- пусто = разрешить всех (небезопасно, но совместимо)
 
   out_chat = os.getenv('TG_CHAT') or '-1003627991849',
   model    = os.getenv('GROQ_MODEL') or 'openai/gpt-oss-120b',
+  or_model = os.getenv('OPENROUTER_MODEL') or 'google/gemma-4-31b-it:free',
   temperature = 0.3,
   debug = not not ((os.getenv('DEBUG') or os.getenv('HARNESS_DEBUG') or ''):match('^[1tyTY]')),
 
@@ -23,6 +25,8 @@ local C = {
   tmp     = os.getenv('HARNESS_TMP') or '/data/data/com.termux/files/usr/tmp',
   kb_dir  = os.getenv('KB_DIR') or (HOME .. '/kb'),
   rag_store = os.getenv('RAG_STORE') or (HOME .. '/rag_index.json'),
+  posts_file = os.getenv('HARNESS_POSTS_FILE') or (HOME .. '/posts_cache.json'),
+  posts_limit = 200,
   log     = os.getenv('HARNESS_LOG') or '/data/data/com.termux/files/usr/tmp/harness.log',
 
   mc_ver  = os.getenv('MC_VERSION') or '26.30',
@@ -31,8 +35,8 @@ local C = {
   prompt_format = [[Ты оформляешь пост о Minecraft-контенте. Верни СТРОГО JSON (без markdown-блоков) с полями:
 name - красивое название без расширения файла (напр. "Create Coasters"),
 type - ровно одно: аддон | DLC | ресурспак | мир,
-description - подробное описание на русском, ~100 слов: что добавляет, ключевые фичи, геймплей/сценарии, кому понравится; опирайся на текст под фото/страницы и контекст из базы знаний (если дан). Избегай технических деталей (форматы файлов, API, движок, номера сборок) — пиши о сути и пользе для игрока.
-version - минимальная версия Minecraft (если не указана, "%s").
+description - подробное описание на русском, ~50 слов: что добавляет, ключевые фичи, геймплей/сценарии, кому понравится; опирайся на текст под фото/страницы и контекст из базы знаний (если дан). Избегай технических деталей (форматы файлов, API, движок, номера сборок) — пиши о сути и пользе для игрока.
+version - минимальная версия Minecraft в формате "ГГ.КК" (например 26.60), без префикса "1."; если не указана — "%s".
 Определи type по имени/описанию (.mcaddon/.mcpack часто аддон/ресурспак; мир=.mcworld; DLC если явно DLC).]],
   footer = '\n\n<a href="https://t.me/boost/KarasichekMC">⚡Буст</a> | <a href="https://t.me/karasichek_family">😺 Наш чат</a>\n\nПᴏдбᴏᴩᴋᴀ ᴀддᴏнᴏʙ:\n<a href="https://t.me/KarasichekMC/2338">🔥 Actions&amp;Stuff</a> | <a href="https://t.me/KarasichekMC/2260">😇 Aether</a>\n<a href="https://t.me/KarasichekMC/2290">🎨 Intresting GUI</a> | <a href="https://t.me/KarasichekMC/2314">🧔 Villager News</a>\n🪁 <a href="https://t.me/KarasichekMC/2335">Create Aeronautics</a> | 🔧 <a href="https://t.me/KarasichekMC/2327">Create</a>\n\n<b>@karasichekMC</b> — ᴏ Bᴇdrᴏᴄᴋ',
 
