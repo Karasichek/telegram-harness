@@ -13,6 +13,14 @@ local function sh(argv)
   local line = {}; for _, a in ipairs(argv) do line[#line+1] = "'"..tostring(a):gsub("'","'\\''").."'" end
   local h = io.popen("sh -c 'exec \"$@\"' sh " .. table.concat(line,' ')); local o=h and h:read('*a') or ''; local ok=h and h:close() or false; return o, ok
 end
+local function groq_call(key,model,sys,user)
+  local bodyf,hdrf,outf = C.tmp..'/groq_b.json', C.tmp..'/groq_h.txt', C.tmp..'/groq_o.json'
+  local bf=io.open(bodyf,'wb'); bf:write(json.encode({model=model,temperature=C.temperature,messages={{role='system',content=sys},{role='user',content=user}}})); bf:close()
+  local hf=io.open(hdrf,'wb'); hf:write('Authorization: Bearer '..key..'\nContent-Type: application/json\n'); hf:close(); os.execute('chmod 600 '..hdrf)
+  sh({'curl','-sS','--max-time',tostring(C.groq_timeout),'https://api.groq.com/openai/v1/chat/completions','-H','@'..hdrf,'--data-binary','@'..bodyf,'-o',outf})
+  local of=io.open(outf,'rb'); local raw=of and of:read('*a') or ''; if of then of:close() end; os.remove(bodyf); os.remove(hdrf); os.remove(outf)
+  local obj=json.decode(raw); if obj and obj.choices and obj.choices[1] then return obj.choices[1].message.content end; return nil,raw
+end
 local function glow(sep, text)
   local h=io.popen('stty size 2>/dev/null'); local s=h and h:read('*a') or ''; if h then h:close() end
   local w = tonumber(s:match('%d+ (%d+)')) or tonumber(os.getenv('COLUMNS')) or 80
@@ -21,7 +29,7 @@ local function glow(sep, text)
 end
 local function env_prefix(a)
   local p={}; local function e(k,v) if v and v~='' then p[#p+1]=k..'='..q(v) end end
-  e('GROQ_API_KEY',a.groq_key); e('TG_TOKEN',a.tg_token); e('TG_CHAT',a.chat); e('GROQ_MODEL',a.model); e('OVERLAY',a.overlay); e('MC_VERSION',a.mc_ver); if C.debug then e('DEBUG','1') end
+  e('GROQ_API_KEY',a.groq_key); e('OPENROUTER_API_KEY',C.openrouter_key); e('TG_TOKEN',a.tg_token); e('TG_CHAT',a.chat); e('GROQ_MODEL',a.model); e('OVERLAY',a.overlay); e('MC_VERSION',a.mc_ver); if C.debug then e('DEBUG','1') end
   return table.concat(p,' ')
 end
 
@@ -75,14 +83,6 @@ elseif args.cmd == 'once' then
   if args.groq_key == '' then io.stderr:write('нужен --groq-key или GROQ_API_KEY\n'); os.exit(1) end
   glow('=', 'ONCE')
   local tgmod = require('tg'); local okrag,rag = pcall(require,'rag')
-  local function groq_call(key,model,sys,user)
-    local bodyf,hdrf,outf = C.tmp..'/o_b.json', C.tmp..'/o_h.txt', C.tmp..'/o_o.json'
-    local bf=io.open(bodyf,'wb'); bf:write(json.encode({model=model,temperature=C.temperature,messages={{role='system',content=sys},{role='user',content=user}}})); bf:close()
-    local hf=io.open(hdrf,'wb'); hf:write('Authorization: Bearer '..key..'\nContent-Type: application/json\n'); hf:close(); os.execute('chmod 600 '..hdrf)
-    sh({'curl','-sS','--max-time',tostring(C.groq_timeout),'https://api.groq.com/openai/v1/chat/completions','-H','@'..hdrf,'--data-binary','@'..bodyf,'-o',outf})
-    local of=io.open(outf,'rb'); local raw=of and of:read('*a') or ''; if of then of:close() end; os.remove(bodyf); os.remove(hdrf); os.remove(outf)
-    local obj=json.decode(raw); if obj and obj.choices and obj.choices[1] then return obj.choices[1].message.content end; return nil,raw
-  end
   local function esc(s) return tostring(s or ''):gsub('&','&amp;'):gsub('<','&lt;'):gsub('>','&gt;') end
   local function html_to_text(html)
     local s=html:gsub('<!%-%-.-%-%->',' '); for _,tag in ipairs({'script','style','noscript','svg','header','footer','nav'}) do s=s:gsub('<'..tag..'[%s>/].-</'..tag..'%s*>',' '):gsub('<'..tag..'[^>]*>',' ') end
@@ -91,11 +91,11 @@ elseif args.cmd == 'once' then
   end
   local fname = (args.doc~='' and args.doc:match('([^/]+)$')) or args.name
   local outimg = C.tmp..'/once_'..tostring(os.time())..'.jpg'
-  local function sz(p) local o=sh({'magick','identify','-format','%w %h',p}); local w,h=tostring(o):match('(%d+) (%d+)'); return tonumber(w),tonumber(h) end
+  local function sz(p) local o=sh({'timeout','60','magick','identify','-format','%w %h',p}); local w,h=tostring(o):match('(%d+) (%d+)'); return tonumber(w),tonumber(h) end
   local bw=sz(args.image); local ow,oh=sz(args.overlay)
   local tw=math.max(1,math.floor((bw or 0)*0.4)); local th=math.max(1,math.floor((oh or 0)*tw/(ow or 1)))
   local yoff=12-math.floor(th*0.25)
-  sh({'magick', args.image, '(', args.overlay, '-resize', tostring(tw)..'x', ')', '-gravity','SouthEast', '-geometry','+12'..(yoff>=0 and ('+'..yoff) or tostring(yoff)), '-composite', outimg})
+  sh({'timeout','60','magick', args.image, '(', args.overlay, '-resize', tostring(tw)..'x', ')', '-gravity','SouthEast', '-geometry','+12'..(yoff>=0 and ('+'..yoff) or tostring(yoff)), '-composite', outimg})
   local an = select(1, groq_call(args.groq_key, args.model, C.prompt_extract_name, 'Имя файла: '..fname)) or fname
   an = an:gsub('[\r\n"]+',''):gsub('^%s+',''):gsub('%s+$',''); if an=='' then an=fname end
   local page_text
@@ -118,14 +118,6 @@ elseif args.cmd == 'format' then
   if args.groq_key == '' then io.stderr:write('нужен --groq-key или GROQ_API_KEY\n'); os.exit(1) end
   glow('=', 'FORMAT')
   local caption=table.concat(args.caption or {},' ')
-  local function groq_call(key,model,sys,user)
-    local bodyf,hdrf,outf=C.tmp..'/f_b.json',C.tmp..'/f_h.txt',C.tmp..'/f_o.json'
-    local bf=io.open(bodyf,'wb'); bf:write(json.encode({model=model,temperature=C.temperature,messages={{role='system',content=sys},{role='user',content=user}}})); bf:close()
-    local hf=io.open(hdrf,'wb'); hf:write('Authorization: Bearer '..key..'\nContent-Type: application/json\n'); hf:close(); os.execute('chmod 600 '..hdrf)
-    sh({'curl','-sS','--max-time',tostring(C.groq_timeout),'https://api.groq.com/openai/v1/chat/completions','-H','@'..hdrf,'--data-binary','@'..bodyf,'-o',outf})
-    local of=io.open(outf,'rb'); local raw=of and of:read('*a') or ''; if of then of:close() end; os.remove(bodyf); os.remove(hdrf); os.remove(outf)
-    local obj=json.decode(raw); if obj and obj.choices and obj.choices[1] then return obj.choices[1].message.content end; return nil,raw
-  end
   local function esc(s) return tostring(s or ''):gsub('&','&amp;'):gsub('<','&lt;'):gsub('>','&gt;') end
   local an=select(1,groq_call(args.groq_key,args.model,C.prompt_extract_name,'Имя файла: '..args.filename)) or args.filename
   an=an:gsub('[\r\n"]+',''):gsub('^%s+',''):gsub('%s+$',''); if an=='' then an=args.filename end

@@ -20,6 +20,14 @@ load()
 
 function M.get(key) return by_key[key] end
 
+function M.key(st)
+  local parts = {}
+  for _, m in ipairs(st.media or {}) do parts[#parts+1] = tostring(m.type)..':'..tostring(m.id)..':'..tostring(m.size or 0) end
+  parts[#parts+1] = 'doc='..tostring(st.doc_name or '')
+  parts[#parts+1] = 'cap='..(tostring(st.caption or ''):sub(1,300))
+  return table.concat(parts, '|')
+end
+
 function M.add(e)
   if type(e) ~= 'table' or e.key == nil then return end
   local old = by_key[e.key]

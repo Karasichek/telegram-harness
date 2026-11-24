@@ -8,11 +8,6 @@ local function tmpname(prefix)
   local n = (os.getenv('HARNESS_TMP') or '/data/data/com.termux/files/usr/tmp') .. '/' .. (prefix or 'tgf') .. '_' .. tostring(os.time()) .. '_' .. tostring(math.random(0, 0x7fffffff)) .. '.dat'
   return n
 end
-local function write_secret(path, data)
-  local old = os.umask and os.umask(63) or nil
-  local f = io.open(path, 'wb'); if not f then if old and os.umask then os.umask(old) end; return nil end
-  f:write(data); f:close(); if old and os.umask then os.umask(old) end; os.execute("chmod 600 " .. path) ; return path
-end
 local function write_tmp(data)
   local n = tmpname('tg'); local f = io.open(n,'wb'); if not f then return nil end; f:write(data); f:close(); return n
 end

@@ -36,11 +36,13 @@ end
 
 local function host_ok(host)
   host = (host or ''):lower()
+  host = host:match('^%[(.+)%]$') or host
+  if host:match('^::ffff:') then host = host:sub(8) end
   if host=='' or host=='localhost' or host:match('%.local$') then return false end
   if host:match('^%d+%.%d+%.%d+%.%d+$') then
     local a,b = host:match('^(%d+)%.(%d+)')
     a,b = tonumber(a),tonumber(b)
-    if a==10 or a==127 or a==0 or a==169 and b==254 or a==172 and b>=16 and b<=31 or a==192 and b==168 then return false end
+    if a==10 or a==127 or a==0 or a==169 and b==254 or a==172 and b>=16 and b<=31 or a==192 and b==168 or a==100 and b>=64 and b<128 then return false end
   end
   if host:match('^%[?::1') or host:match('^fc') or host:match('^fd') or host:match('^fe80') then return false end
   return true
@@ -48,7 +50,7 @@ end
 local function safe_url(url)
   if type(url)~='string' then return nil end
   local scheme, rest = url:match('^(https?)://(.+)$'); if not scheme then return nil end
-  local host = rest:match('^([^/%?#:]+)') or rest:match('^%[([^%]]+)%]')
+  local host = rest:match('^%[([^%]]+)]') or rest:match('^([^/%?#:]+)')
   if not host_ok(host) then return nil end
   return scheme..'://'..rest
 end
@@ -102,7 +104,7 @@ local function save_kb(chat_id, text)
 end
 
 local function img_size(path)
-  local out = run({'magick','identify','-format','%w %h', path})
+  local out = run({'timeout','60','magick','identify','-format','%w %h', path})
   local w, h = tostring(out):match('(%d+) (%d+)')
   return tonumber(w), tonumber(h)
 end
@@ -112,7 +114,7 @@ local function overlay_image(inpath, outpath)
   local tw = math.max(1, math.floor(bw*0.4))
   local th = math.max(1, math.floor(oh*tw/ow))
   local yoff = 12 - math.floor(th*0.25)
-  local _, ok = run({'magick', inpath, '(', C.overlay, '-resize', tostring(tw)..'x', ')', '-gravity','SouthEast', '-geometry','+12'..(yoff>=0 and ('+'..yoff) or tostring(yoff)), '-composite', outpath})
+  local _, ok = run({'timeout','60','magick', inpath, '(', C.overlay, '-resize', tostring(tw)..'x', ')', '-gravity','SouthEast', '-geometry','+12'..(yoff>=0 and ('+'..yoff) or tostring(yoff)), '-composite', outpath})
   if not ok or not file_exists(outpath) then return nil, 'overlay failed' end
   return outpath
 end
@@ -148,14 +150,6 @@ local function extract_name(filename)
   return name
 end
 
-local function posts_key(st)
-  local parts = {}
-  for _, m in ipairs(st.media or {}) do parts[#parts+1] = tostring(m.type)..':'..tostring(m.id)..':'..tostring(m.size or 0) end
-  parts[#parts+1] = 'doc='..tostring(st.doc_name or '')
-  parts[#parts+1] = 'cap='..(tostring(st.caption or ''):sub(1,300))
-  return table.concat(parts, '|')
-end
-
 local function format_post(raw_caption, addon_name, page_text, key)
   local cached = key and posts.get(key) or nil
   if cached then return cached.text end
@@ -181,6 +175,9 @@ end
 local function touch(cid) pending_at[cid]=os.time() end
 
 local function process(chat_id, st)
+  local lock = C.tmp..'/harness.lock'
+  if file_exists(lock) then return nil, 'already running' end
+  local lf = io.open(lock, 'w'); if lf then lf:write(tostring(os.time())); lf:close() end
   bot:call('sendMessage', {chat_id=chat_id, text='Обрабатываю…'})
   local uid = tostring(os.time())..'_'..tostring(math.random(0,0x7fffffff))
   local fname = st.doc_name or 'addon.mcaddon'
@@ -198,7 +195,7 @@ local function process(chat_id, st)
     local body = table.concat(log, '\n')
     for i = 1, #body, 4000 do bot:call('sendMessage', {chat_id=chat_id, text='лог:\n'..body:sub(i, i+3999)}) end
   end
-  local function cleanup() for _, p in ipairs(tmps) do rm(p) end; os.execute('rm -rf '..q(doc_dir)) end
+  local function cleanup() for _, p in ipairs(tmps) do rm(p) end; os.execute('rm -rf '..q(doc_dir)); rm(lock) end
   plog('media='..#(st.media or {})..' caption='..tostring(st.caption and #st.caption)..' doc='..tostring(st.doc_name))
   for i, m in ipairs(st.media or {}) do
     plog('#'..i..' '..tostring(m.type)..' size='..tostring(m.size))
@@ -253,7 +250,7 @@ local function process(chat_id, st)
   local url = st.url or first_url(st.caption)
   local page_text
   if url then bot:call('sendMessage',{chat_id=chat_id,text='Парсю страницу…'}); page_text = fetch_page_text(url) end
-  local key = posts_key(st)
+  local key = posts.key(st)
   local text, e2 = format_post(st.caption or '', addon_name, page_text, key)
   if not text then plog('format failed: '..tostring(e2)); flush_log(); cleanup(); return nil, tostring(e2) end
   local function send_one(it, cap)
@@ -308,7 +305,7 @@ local function process(chat_id, st)
   return res, text
 end
 
-if not C.groq_key then io.stderr:write('set GROQ_API_KEY\n'); os.exit(1) end
+if not (C.groq_key or C.openrouter_key) then io.stderr:write('set GROQ_API_KEY\n'); os.exit(1) end
 if not C.tg_token then io.stderr:write('set TG_TOKEN\n'); os.exit(1) end
 if not next(C.allowed_users) then io.stderr:write('warn: ALLOWED_USERS not set, bot accepts messages from anyone\n') end
 print('harness polling… out='..tostring(C.out_chat)..(C.debug and ' [debug]' or ''))
